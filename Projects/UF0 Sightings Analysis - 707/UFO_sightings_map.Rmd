@@ -1,0 +1,906 @@
+---
+title: "UFO_sightings_map"
+author: "Ryan Whalen, John Bartlett"
+date: "7/16/2020"
+output:
+  pdf_document: default
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r size_optimization, include=FALSE}
+# Set up the hook
+library(knitr)
+knit_hooks$set(optipng = hook_optipng)
+knit_hooks$set(pngquant = hook_pngquant)
+```
+
+
+```{r inital-load}
+library(dplyr)
+library(ggplot2)
+library(tm)
+library(mapdata)
+library(cluster)
+library(randomForest)
+library(naivebayes)
+library(caret)
+library(sqldf)
+library(ggplot2)
+library(class)
+library(e1071)
+library(randomForest)
+#Ryans file
+#sightings<-read.csv("/Users/ryanwhalen/Downloads/388_793053_bundle_archive 2/scrubbed.csv", stringsAsFactors = FALSE)
+
+#Johns location of file
+sightings<-read.csv("E:/OneDrive/Documents/GitHub/707-Dream-Team/scrubbed.csv", stringsAsFactors = FALSE)
+
+
+```
+
+```{r}
+sightings.us<-sightings[sightings$country == "us", ]
+sightings.us$stateabbr<-sightings.us$state
+```
+
+
+```{r}
+unique(sightings.us$stateabbr)
+```
+
+
+```{r}
+library(dplyr)
+sightings.us = filter(sightings.us, stateabbr != "ak" & stateabbr != "hi")
+```
+
+
+```{r}
+unique(sightings.us$stateabbr)
+```
+
+
+```{r}
+stateFromLower <-function(x) {
+#read 52 state codes into local variable [includes DC (Washington D.C. and PR (Puerto Rico)]
+st.codes<-data.frame(
+state=as.factor(c("ak", "al", "ar", "az", "ca", "co", "ct", "dc", "de", "fl", "ga",
+"hi", "ia", "id", "il", "in", "ks", "ky", "la", "ma", "md", "me",
+"mi", "mn", "mo", "ms", "mt", "nc", "nd", "ne", "nh", "nj", "nm",
+"nv", "ny", "oh", "ok", "or", "pa", "pr", "ri", "sc", "sd", "tn",
+"tx", "ut", "va", "vt", "wa", "wi", "wv", "wy")),
+full=as.factor(c("alaska","alabama","arkansas","arizona","california","colorado",
+"connecticut","district of columbia","delaware","florida","georgia",
+"hawaii","iowa","idaho","illinois","indiana","kansas","kentucky",
+"louisiana","massachusetts","maryland","maine","michigan","minnesota",
+"missouri","mississippi","montana","north carolina","north dakota",
+"nebraska","new hampshire","new jersey","new mexico","nevada",
+"new york","ohio","oklahoma","oregon","pennsylvania","puerto rico",
+"rhode island","south carolina","south dakota","tennessee","texas",
+"utah","virginia","vermont","washington","wisconsin",
+"west virginia","wyoming"))
+)
+#create an nx1 data.frame of state codes from source column
+st.x<-data.frame(state=x)
+#match source codes with codes from 'st.codes' local variable and use to return the full state name
+refac.x<-st.codes$full[match(st.x$state,st.codes$state)]
+#return the full state names in the same order in which they appeared in the original source
+return(refac.x)
+}
+
+
+```
+
+
+```{r}
+
+sightings.us<-sightings.us[,-3]
+#get state names from converting abreviations
+sightings.us<-cbind (sightings.us,state=(stateFromLower(sightings.us$stateabbr)))
+#convert to character
+
+sightings.us %>% mutate_if(is.factor, as.character) -> sightings.us
+#convert to numberic 
+sightings.us$latitude<-as.numeric(sightings.us$latitude)
+
+```
+
+
+```{r}
+library(ggplot2)
+us<-map_data("state")
+map.ufo<-ggplot(sightings.us, aes(map_id=state))
+map.ufo<-map.ufo + geom_map(map=us, fill = "black")
+map.ufo<- map.ufo + geom_point(aes(x= longitude, y=latitude, color = "red"), alpha=.03,size=0.01)
+map.ufo<-map.ufo + expand_limits(x=us$long, y=us$lat)
+map.ufo<- map.ufo+ coord_map() + ggtitle("UFO Sightings")+ theme(panel.background = element_rect(fill = "#2C3E4F", colour = "#2C3E4F"))
+map.ufo
+```
+
+
+```{r}
+library(devtools)
+library(usethis)
+```
+
+```{r}
+library(sp)
+library(maps)
+library(maptools)
+
+# The single argument to this function, pointsDF, is a data.frame in which:
+#   - column 1 contains the longitude in degrees (negative in the US)
+#   - column 2 contains the latitude in degrees
+
+latlong2county <- function(pointsDF) {
+    # Prepare SpatialPolygons object with one SpatialPolygon
+    # per county
+    counties <- map('county', fill=TRUE, col="transparent", plot=FALSE)
+    IDs <- sapply(strsplit(counties$names, ":"), function(x) x[1])
+    counties_sp <- map2SpatialPolygons(counties, IDs=IDs,
+                     proj4string=CRS("+proj=longlat +datum=WGS84"))
+
+    # Convert pointsDF to a SpatialPoints object 
+    pointsSP <- SpatialPoints(pointsDF, 
+                    proj4string=CRS("+proj=longlat +datum=WGS84"))
+
+    # Use 'over' to get _indices_ of the Polygons object containing each point 
+    indices <- over(pointsSP, counties_sp)
+
+    # Return the county names of the Polygons object containing each point
+    countyNames <- sapply(counties_sp@polygons, function(x) x@ID)
+    countyNames[indices]
+}
+
+```
+
+
+```{r}
+latlong2county()
+```
+
+
+```{r}
+#temp <- tempfile()
+#download.file("http://download.geonames.org/export/zip/US.zip",temp)
+#con <- unz(temp, "US.txt")
+#US <- read.delim(con, header=FALSE)
+#unlink(temp)
+
+## Find state and county
+
+colnames(US)[c(3,5,6)] <- c("city","state","county")
+US$city <- tolower(US$city)
+US$city <- tolower(US$state)
+myCityNames <- tolower(sightings.us$city)
+myCities <- US[US$city %in% myCityNames, ]
+myCities <- myCities[c("city","state","county")]
+myCities <- myCities[!duplicated(myCities),]
+myCities <- myCities[order(myCities$city, myCities$state, decreasing = TRUE), ]
+```
+
+
+```{r}
+myPlaces <- data.frame(city = sightings.us$city, state = toupper(sightings.us$state)  )
+countysightings<-merge( myPlaces,myCities, by = c("city", "state") )
+```
+
+
+```{r}
+library(dplyr)
+library(plyr)
+countysightings$county<-as.factor(countysightings$county)
+county.count<-count(countysightings$county)
+```
+
+
+```{r}
+
+
+library(maps)
+library(mapproj)
+
+map("county", regions = ".", fill = T, col = terrain.colors(20) )
+mycolors <- colorRamp(c("red","black"))
+num.cols <- 10
+my.color.vec <-rev(mycolors(num.cols))
+
+library(plotrix)
+county.count$index <-round(rescale(x = county.count$freq, c(1,num.cols)), 0)
+
+county.count$color <- my.color.vec[county.count$index]
+
+m <- map("county", regions = ".")
+m$names
+county.count$x
+county.count$x<-as.character(county.count$x)
+county.count$x <-tolower(county.count$x)
+cc.order <- match.map(database = "county", regions = county.count$x
+                        ,exact = FALSE, warn = TRUE)
+
+cc.order
+
+cbind(m$names, cc.wa$x[wa.c.order])
+
+map("county",regions = ".", col = county.count$color, fill = TRUE
+    ,resolution = 0, lty = 1, projection = "polyconic", border = "tan")
+```
+
+
+```{r}
+wordcloud(sightings.us$comments)
+```
+
+
+```{r}
+sightings.world<-sightings
+
+library(ggplot2)
+#investigate whart is here
+
+str(sightings.world)
+
+#Now to massage the formats some
+
+#convert to date time
+library(gsubfn)
+library(anytime)
+sightings.world$datetime <- gsubfn("/", "-", sightings.world$datetime)
+sightings.world$datetime <- anytime(sightings.world$datetime)
+
+#split into separate vectors and use character as there won't be math done on the values
+sightings.world$year = as.character(format(sightings.world$datetime
+                                           , format = "%Y"))
+sightings.world$month = as.numeric(format(sightings.world$datetime
+                                            , format = "%m"))
+sightings.world$month.name <-month.name[sightings.world$month]
+sightings.world$month.name = factor(sightings.world$month.name, levels = month.name)
+sightings.world$month = as.character(format(sightings.world$datetime
+                                            , format = "%m"))
+sightings.world$day = as.character(format(sightings.world$datetime
+                                          , format = "%d"))
+sightings.world$hour = as.character(format(sightings.world$datetime
+                                          , format = "%H"))
+
+
+
+#convert to numeric 
+sightings.world$latitude<-as.numeric(sightings.world$latitude)
+
+#convert to numeric and rename duration values
+library(dplyr)
+sightings.world$duration..seconds.<-as.numeric(sightings.world$duration..seconds.)
+sightings.world<-rename(sightings.world,duration.seconds=duration..seconds.)
+sightings.world<-rename(sightings.world,duration.description=duration..hours.min.)
+
+#find range to see when we are discusing
+sightings.world$year<-as.numeric(sightings.world$year)
+range(sightings.world$year)
+#1906-2014
+sightings.world$year<-as.character(sightings.world$year)
+
+#now to look at some time series information
+par(mfrow=c(2,2))
+
+barplot(table(sightings.world$year), main = "UFO sightings by year, 1906-2014"
+        ,las=2, cex.names = .6, col = "green",ylab = "Sightings",xlab = "Year")
+barplot(table(sightings.world$month.name), main = "UFO sightings by month of year, 1906-2014"
+        ,las=2, cex.names = .6, col = "green", ylab = "Sightings", xlab = "Month")
+barplot(table(sightings.world$day), main = "UFO sightings by day of month, 1906-2014"
+        ,las=2, cex.names = .6, col = "green", ylab = "Sightings", xlab = "Day of Month")
+barplot(table(sightings.world$hour), main = "UFO sightings by time of day, 1906-2014"
+        ,las=2, cex.names = .6, col = "green", ylab = "Sightings", xlab = "Hour of Day")
+
+#now some international geographic information, then dial in on the US
+
+
+par(mfrow=c(1,1))
+#dial in on rows with county data and create a pie chart
+sightings.world2<-sightings.world[sightings.world$country != "",]
+pie(table(sightings.world2$country),cex.names = .6,col="green", main = "UFO sightings by Country, 1906-2014")
+
+#look at rows with us as country and create barplot by state
+sightings.us<-sightings.world[sightings.world$country == "us", ]
+barplot(table(sightings.us$state),las=2, cex.names = .4
+        , horiz = FALSE, main = "UFO sightings by US state, 1906-2014",col = "green", ylab = "Sightings", xlab = "State")
+
+
+par(mfrow=c(1,2),bg="white")
+
+#see the distribution of sighting duractions
+barplot(rev(table(sightings.world$duration.seconds)),las=2, cex.names = .74
+        , horiz = TRUE, col="green",border ="green",main = "UFO sightings by duration in seconds, 1906-2014", ylab = "Seconds", xlab = "Sightings")
+
+
+
+#look at the duration of sightings over time, with all outliers
+plot(sightings.world2$year, sightings.world2$duration.seconds
+     ,col = rgb(red = 0, green = 1, blue = 0, alpha = 0.5),ylab = "Seconds", xlab = "Year", main = "UFO sighting duration over Year")
+
+
+#remove the highest outliers and blanks
+sightings.time<-sightings.world[sightings.world$duration.seconds != "", ]
+sightings.time<-sightings.time[sightings.time$duration.seconds < quantile(sightings.time$duration.seconds, 0.95, na.rm = T), ]
+
+#plot again with outliers removed 
+plot(sightings.time$year, sightings.time$duration.seconds
+     ,col = rgb(red = 0, green = 1, blue = 0, alpha = 0.25)
+     ,ylab = "Seconds", xlab = "Year", main = "95 Quartile of UFO sighting duration over Year")
+
+
+par(mfrow=c(1,1),bg="white")
+#view the distributiuon of shapes
+sightings.shaped<-sightings.world[sightings.world$shape != "", ]
+barplot(rev(table(sightings.shaped$shape)),las=2, cex.names = .74
+        , horiz = FALSE, 
+        main = "UFO sightings by shape, 1906-2014"
+        ,ylab = "Sightings", xlab = "shape", col = "green")
+
+#general picture of change to time
+yearly.shape.count<-sightings.shaped %>% group_by(year) %>% count(shape)
+yearly.shape.count$year<-as.numeric(yearly.shape.count$year)
+ggplot(yearly.shape.count, aes(x=year, y=n, color=shape))+geom_line()+labs(x="Year", y="Count", title = "Full View UFO sightings by shape over Year")
+
+```
+
+
+
+```{r craft-us-only-df}
+sightings.us<-sightings[sightings$country == "us", ]
+sightings.us$stateabbr<-sightings.us$state
+```
+
+
+```{r craft-ufo-sightings-DF}
+unique(sightings.us$stateabbr)
+sightings.us = filter(sightings.us, stateabbr != "ak" & stateabbr != "hi")
+unique(sightings.us$stateabbr)
+stateFromLower <-function(x) {
+#read 52 state codes into local variable [includes DC (Washington D.C. and PR (Puerto Rico)]
+st.codes<-data.frame(
+state=as.factor(c("ak", "al", "ar", "az", "ca", "co", "ct", "dc", "de", "fl", "ga",
+"hi", "ia", "id", "il", "in", "ks", "ky", "la", "ma", "md", "me",
+"mi", "mn", "mo", "ms", "mt", "nc", "nd", "ne", "nh", "nj", "nm",
+"nv", "ny", "oh", "ok", "or", "pa", "pr", "ri", "sc", "sd", "tn",
+"tx", "ut", "va", "vt", "wa", "wi", "wv", "wy")),
+full=as.factor(c("alaska","alabama","arkansas","arizona","california","colorado",
+"connecticut","district of columbia","delaware","florida","georgia",
+"hawaii","iowa","idaho","illinois","indiana","kansas","kentucky",
+"louisiana","massachusetts","maryland","maine","michigan","minnesota",
+"missouri","mississippi","montana","north carolina","north dakota",
+"nebraska","new hampshire","new jersey","new mexico","nevada",
+"new york","ohio","oklahoma","oregon","pennsylvania","puerto rico",
+"rhode island","south carolina","south dakota","tennessee","texas",
+"utah","virginia","vermont","washington","wisconsin",
+"west virginia","wyoming"))
+)
+#create an nx1 data.frame of state codes from source column
+st.x<-data.frame(state=x)
+#match source codes with codes from 'st.codes' local variable and use to return the full state name
+refac.x<-st.codes$full[match(st.x$state,st.codes$state)]
+#return the full state names in the same order in which they appeared in the original source
+return(refac.x)
+}
+sightings.us<-sightings.us[,-3]
+#get state names from converting abreviations
+sightings.us<-cbind (sightings.us,state=(stateFromLower(sightings.us$stateabbr)))
+#convert to character
+
+sightings.us %>% mutate_if(is.factor, as.character) -> sightings.us
+#convert to numberic 
+sightings.us$latitude<-as.numeric(sightings.us$latitude)
+```
+
+
+```{r ufo-sighting-us-map}
+us<-map_data("state")
+map.ufo<-ggplot(sightings.us, aes(map_id=state))
+map.ufo<-map.ufo + geom_map(map=us, fill = "black")
+map.ufo<- map.ufo + geom_point(aes(x= longitude, y=latitude, color = "red"), alpha=.03,size=0.01)
+map.ufo<-map.ufo + expand_limits(x=us$long, y=us$lat)
+map.ufo<- map.ufo+ coord_map() + ggtitle("UFO Sightings")+ theme(panel.background = element_rect(fill = "#2C3E4F", colour = "#2C3E4F"))
+map.ufo
+```
+
+
+```{r find_optimal_cluster}
+#copy df (lat and long only) for custering
+sightings_clust <- sightings[10:11]
+
+#convert latitude to numeric
+sightings_clust$latitude <- as.numeric(sightings$latitude)
+
+#omit na's
+sightings_clust <- na.omit(sightings_clust)
+
+#swap lat and long for mapping then fix names
+sightings_clust <- data.frame(sightings_clust$longitude,sightings_clust$latitude)
+names(sightings_clust) <- c('longitude','latitude')
+
+# convert data to a SpatialPointsDataFrame object
+# use lat and long colomns of sightings data frame
+#SPDF_sightings <- SpatialPointsDataFrame(
+#      matrix(c(sightings_clust$longitude,sightings_clust$latitude), ncol=2), data.frame(ID=seq(1:nrow(sightings_clust))),
+#      proj4string=CRS("+proj=longlat +ellps=WGS84 +datum=WGS84"))
+
+# use the distm function to generate a geodesic distance matrix in meters
+# Old:
+# mdist <- distm(SPDF_sightings)
+# this will try and create a 80000 * 80000 df, crashed my pc 3 times
+# So i went to kmeans :(
+
+# FIND OPTIMAL NUMBER OF CLUSTERS
+# find the variance 
+TheVariance=apply(sightings_clust,2,var)
+
+# find the sum of squares for 1 cluster
+WithinClusterSumOfSquares = (nrow(sightings_clust)-1)*sum(TheVariance)
+
+# find the sum of squares for 2 to 15 clusters
+for (i in 2:40) {
+  ClusterInfo=kmeans(sightings_clust, centers=i)
+  WithinClusterSumOfSquares[i] = sum(ClusterInfo$withinss)
+}
+# plut the result
+plot(1:40, WithinClusterSumOfSquares, type="b", xlab="Number of Clusters",ylab="Within groups sum of squares")
+
+## REPEAT TO SHOW THE KANGAROO EFFECT
+# find the sum of squares for 2 to 15 clusters
+for (i in 2:40) {
+  ClusterInfo=kmeans(sightings_clust, centers=i)
+  WithinClusterSumOfSquares[i] = sum(ClusterInfo$withinss)
+}
+# plut the result
+plot(1:40, WithinClusterSumOfSquares, type="b", xlab="Number of Clusters",ylab="Within groups sum of squares")
+
+# find the sum of squares for 2 to 15 clusters
+for (i in 2:40) {
+  ClusterInfo=kmeans(sightings_clust, centers=i)
+  WithinClusterSumOfSquares[i] = sum(ClusterInfo$withinss)
+}
+# plut the result
+plot(1:40, WithinClusterSumOfSquares, type="b", xlab="Number of Clusters",ylab="Within groups sum of squares")
+
+
+```
+
+#Takeaway:
+
+The optimal number of clusters is somewhere inbetween 10 and 30, there seems to be some strange results of a sort of bouncing efficentcy within the that range.
+
+Due this weird kangaroo effect, we chose to go for a optimal number of clusters that sits in the kangaroo range, so we settled on 30 as that is the only real reliable effective number.  Any number of clusters before that seems to be a luck of the draw, atleast in terms of the sum of squares of each cluster
+
+Our assumption is that the kangaroo effect is beacause of how wides spread the data is, and because of over 3 quarters of the data being centered in north america.
+
+
+```{r pure_cluster}
+UFO_clust = kmeans(sightings_clust, 15)
+
+#
+str(UFO_clust)
+
+#preview the plot
+plot(sightings_clust, col = UFO_clust$cluster)
+
+# add the centers of the clusters
+points(UFO_clust$centers, col = 1:15, pch = 8, cex = 2)
+
+#alternave visualization of clusters
+#library(factoextra)
+#library(ggplot2)
+#fviz_cluster(UFO_clust, data = sightings_clust)
+# too many errors, left out
+
+```
+
+
+```{r kmeans_cluster_views}
+world <- map_data("world")
+
+#new df of centers and size
+UFO_clust_sum <- data.frame(UFO_clust$size,data.frame(UFO_clust$centers))
+names(UFO_clust_sum) <- c('size','longitude','latitude')
+
+ggplot(UFO_clust_sum,aes(longitude,latitude)) +
+  geom_polygon(data=world,aes(x=long,y=lat,group=group),color='grey',fill='black',alpha=.5)+
+  geom_point(aes(color = UFO_clust_sum$size, size = UFO_clust_sum$size * 2),alpha=.80) +
+  scale_color_gradient(low="blue", high="red") +
+  ggtitle('Concentration Map of UFO Sighting Centers')
+
+```
+
+This map really just shows how incrediably concentrated the data is on the US.  The size of each cluster is so much larger in the US cluseters. Also just the amount of US clusters when vompared to international clusters shows a stark difference.
+
+
+```{r 2d_density_maps}
+
+#ggplot with stat density to show how concentrated data is
+ggplot(sightings_clust,aes(longitude,latitude)) +
+  geom_polygon(data=world,aes(x=long,y=lat,group=group),color='grey',fill='black',alpha=.5)+
+  geom_point(size=.01,alpha=.01) +
+  ggtitle('Sighting World Density') +
+  stat_density_2d(aes(color = stat(level))) +
+  scale_color_gradient(low="light blue", high="red")
+```
+
+
+```{r 2d_density_maps_2, fig.height=8}
+#zoomed in
+ggplot(sightings_clust,aes(longitude,latitude)) +
+  geom_polygon(data=world,aes(x=long,y=lat,group=group),color='grey',fill='black',alpha=.5)+
+  geom_point(size=.01,alpha=.01) +
+  ggtitle('Sighting World Density') +
+  stat_density_2d(aes(color = stat(level))) +
+  scale_color_gradient(low="light blue", high="red") +
+  coord_map(xlim = c(-130, 10),ylim = c(20, 55))
+
+
+```
+
+
+```{r data_prep_prediction}
+#shape over time
+#sightings_shape_OT <- data.frame(sightings$shape, format(as.Date(sightings$datetime, format="%d/%m/%Y"),"%Y"), sightings$country, sightings$state, #sightings$duration..seconds.)
+
+sightings_shape_OT <- data.frame(sightings$shape, format(as.Date(sightings$datetime, format="%d/%m/%Y"),"%Y"), sightings$duration..seconds.)
+
+##rename
+
+names(sightings_shape_OT) <- c('shape', 'year', 'duration')
+
+##omit na's and emptys
+sightings_shape_OT <- na.omit(sightings_shape_OT)
+
+##set country if state is populated
+#count <- 1
+#for (val in sightings_shape_OT$country){
+  #if (val == ''){
+    #if(sightings_shape_OT[count,5] != ''){
+      #sightings_shape_OT[count,4] <- 'us'
+      #tracker = tracker + 1
+    #}
+  #}
+  #count = count+1
+#}
+#
+##cut out non - US
+#count <- 1
+#non_us_list <- c()
+#for (val in sightings_shape_OT$country){
+  #if (val != 'us'){
+    #non_us_list <- c(non_us_list, count)
+  #}
+  #count = count+1
+#}
+#
+#sightings_shape_OT <- sightings_shape_OT[-non_us_list, ]
+```
+
+
+
+```{r association_rule_mine_S-Y}
+library(arules)
+library(arulesViz)
+
+#association with shape and year
+sightings_shape_OT <- data.frame(sightings$shape, format(as.Date(sightings$datetime, format="%d/%m/%Y"),"%Y"))
+
+##rename
+names(sightings_shape_OT) <- c('shape', 'year')
+
+
+sightings_shape_rules = arules::apriori(sightings_shape_OT, parameter = list(support=.005, confidence=.01, minlen=2))
+inspect(sightings_shape_rules[1:10])
+
+## sorted
+SortedRules_conf <- sort(sightings_shape_rules, by="confidence", decreasing=TRUE)
+inspect(SortedRules_conf[1:10])
+
+SortedRules_sup <- sort(sightings_shape_rules, by="support", decreasing=TRUE)
+inspect(SortedRules_sup[1:10])
+
+
+plot (SortedRules_sup[1:14],method="graph",interactive=TRUE,shading="confidence") 
+plot (SortedRules_conf[1:14],method="graph",interactive=TRUE,shading="confidence") 
+
+```
+
+```{r association_rule_mine_S-D}
+library(arules)
+library(arulesViz)
+
+#association with shape and year
+sightings_shape_OT <- data.frame(sightings$shape, sightings$duration..seconds.)
+
+##rename
+names(sightings_shape_OT) <- c('shape', 'duration')
+
+
+sightings_shape_rules = arules::apriori(sightings_shape_OT, parameter = list(support=.005, confidence=.01, minlen=2))
+inspect(sightings_shape_rules[1:10])
+
+## sorted
+SortedRules_conf <- sort(sightings_shape_rules, by="confidence", decreasing=TRUE)
+inspect(SortedRules_conf[1:20])
+
+SortedRules_sup <- sort(sightings_shape_rules, by="support", decreasing=TRUE)
+inspect(SortedRules_sup[1:20])
+
+
+plot (SortedRules_sup[1:50],method="graph",interactive=TRUE,shading="confidence") 
+plot (SortedRules_conf[1:50],method="graph",interactive=TRUE,shading="confidence") 
+
+```
+
+```{r setup-kfolds, include=FALSE}
+all_results <- data.frame(orig=c(), pred=c())
+
+# Create k-folds for k-fold cross validation 
+## Number of observations
+N <- nrow(sightings_shape_OT)
+## Number of desired splits
+kfolds <- 10
+## Generate indices of holdout observations
+## Note if N is not a multiple of folds you will get a warning, but is OK.
+holdout <- split(sample(1:N), 1:kfolds)
+head(holdout)
+
+```
+
+
+```{r randomforest}
+#for (k in 1:kfolds) {
+  #new_test <- sightings_shape_OT[holdout[[k]], ]
+  #new_train <- sightings_shape_OT[-holdout[[k]], ]
+#  
+  #new_test_no_label <- new_test[-c(1)]
+  #new_test_just_label <- new_test[c(1)]
+#  
+  #test_model <- randomForest(label ~ ., new_train, na.action=na.pass)
+  #pred <- predict(test_model, new_test_no_label, type=c("class"))
+#  
+  #all_results <- rbind(all_results, data.frame(orig=new_test_just_label$label, pred=pred))
+#}
+#table(all_results$orig, all_results$pred)
+#get_accuracy_rate(table(all_results$orig, all_results$pred), length(all_results$pred))
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+
+
