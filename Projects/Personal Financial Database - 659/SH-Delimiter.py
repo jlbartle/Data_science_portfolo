@@ -1,7 +1,7 @@
 import csv
 
 def delimit_pulse():
-    with open('E:\OneDrive\DataScience\IST 659\Project\SamsungHealth\pulse.csv') as csv_file:
+    with open('X:\\pulse.csv') as csv_file:
         forecast_reader = csv.reader(csv_file, delimiter=',')
 
         ##initial pointers
@@ -21,7 +21,7 @@ def delimit_pulse():
 
 ##read forecast
 def delimit_cal_burned():
-    with open('E:\OneDrive\DataScience\IST 659\Project\SamsungHealth\cal_burned.csv') as csv_file:
+    with open('X:\\cal_burned.csv') as csv_file:
         forecast_reader = csv.reader(csv_file, delimiter=',')
 
         ##initial pointers
@@ -42,7 +42,7 @@ def delimit_cal_burned():
 
 
 def delimit_steps():
-    with open('E:\OneDrive\DataScience\IST 659\Project\SamsungHealth\steps.csv') as csv_file:
+    with open('X:\\steps.csv') as csv_file:
         forecast_reader = csv.reader(csv_file, delimiter=',')
 
         ##initial pointers
@@ -63,7 +63,7 @@ def delimit_steps():
 
 
 def delimit_food():
-    with open('E:\OneDrive\DataScience\IST 659\Project\SamsungHealth\\food_info.csv') as csv_file:
+    with open('X:\\\food_info.csv') as csv_file:
         forecast_reader = csv.reader(csv_file, delimiter=',')
 
         ##initial pointers
@@ -105,7 +105,7 @@ def delimit_food():
                              row[23] + ', ' + row[31] + ', ' + row[29] + ')\n')
 
 def delimit_meals():
-    with open('E:\OneDrive\DataScience\IST 659\Project\SamsungHealth\meals.csv') as csv_file:
+    with open('X:\\meals.csv') as csv_file:
         forecast_reader = csv.reader(csv_file, delimiter=',')
 
         ##initial pointers
